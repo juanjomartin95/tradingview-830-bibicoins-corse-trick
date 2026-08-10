@@ -15,7 +15,7 @@ Cuando la vela objetivo cierra, el indicador:
 
 ## Configuración en TradingView
 
-1. Abre el editor Pine (**Pine Editor**, parte inferior de TradingView).
+1. Abre el editor Pine (**Pine Editor**, parte inferior de TradingView) ![icono Pine Editor](assets/pine-editor-icon.png).
 2. Pega el contenido de [`vela-830-tp.pine`](vela-830-tp.pine) y pulsa **Add to chart** / **Guardar**.
 3. **Pon el gráfico en temporada de 5 minutos.** Si no está en 5 min, el propio indicador muestra un aviso en pantalla (⚠ *Pon el gráfico en 5 min*).
 4. Ajusta la **zona horaria** para que "8:30" corresponda a la hora que realmente quieres (por defecto `Europe/Madrid`). Esto se configura desde los parámetros del indicador, grupo **Configuración**.
