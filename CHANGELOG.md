@@ -12,6 +12,7 @@ Tipos de cambio que usamos: **Añadido**, **Cambiado**, **Corregido**, **Elimina
 ### Cambiado
 
 - README actualizado a la versión 1.1.0: explica la sesión asiática, el SL y los marcadores, y documenta todos los ajustes agrupados igual que en el panel del indicador.
+- Captura de ejemplo del README sustituida por una de la versión 1.1.0, en la que se ven la caja de Asia, la vela de 8:30 marcada y las líneas de entrada, TP y SL (`assets/tabla-tp.png` → `assets/ejemplo-grafico.png`).
 
 ## [1.1.0] - 2026-08-11
 

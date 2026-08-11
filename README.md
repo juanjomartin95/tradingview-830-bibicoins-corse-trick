@@ -9,7 +9,7 @@ Indicador para TradingView (Pine Script v6) que trabaja sobre la vela de las **8
 
 Además sombrea la sesión asiática con una caja acotada a su máximo y su mínimo (no ocupa todo el eje Y), marca visualmente la vela de 8:30, muestra una tabla de resumen y lanza un aviso (`alert`) en cuanto la vela cierra.
 
-![Ejemplo de la tabla y las líneas de TP](assets/tabla-tp.png)
+![Ejemplo: caja de la sesión asiática, vela de 8:30 marcada y líneas de entrada, TP y SL](assets/ejemplo-grafico.png)
 
 ## Qué dibuja en el gráfico
 
