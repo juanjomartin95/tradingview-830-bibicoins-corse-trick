@@ -34,3 +34,7 @@ Cuando la vela objetivo cierra, el indicador:
    | Color alcista / Color bajista | Colores de líneas y tabla según dirección | Verde / Rojo |
 
 6. Para recibir notificaciones, crea una **alerta** de TradingView sobre este indicador (clic derecho en el gráfico → **Añadir alerta**, o el icono de reloj) usando la condición del propio indicador. El mensaje de la alerta ya incluye la dirección, el cierre y el TP calculados.
+
+## Historial de cambios
+
+Las mejoras, cambios y correcciones de cada versión están en [`CHANGELOG.md`](CHANGELOG.md).

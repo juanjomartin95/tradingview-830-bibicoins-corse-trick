@@ -1,98 +1,200 @@
 //@version=6
-indicator("Vela 8:30 → TP ±100 pts", shorttitle = "TP 8:30", overlay = true, max_lines_count = 500, max_labels_count = 500)
+indicator("Vela 8:30 → TP ±100 pts + Asia/SL", shorttitle = "TP 8:30 + Asia", overlay = true, max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500)
 
 // ─────────────────────────────────────────────────────────────
-//  Detecta la vela de 8:30–8:35 (gráfico de 5 min).
-//  · Si cierra ALCISTA  → TP = cierre + X puntos
-//  · Si cierra BAJISTA  → TP = cierre − X puntos
-//  Pinta la línea del TP, la etiqueta con el número, una tabla
-//  de resumen y lanza un aviso en cuanto cierra la vela.
+//  1) Detecta la vela de 8:30–8:35 (5 min) → dirección + TP (±X pts).
+//  2) Sombrea la sesión asiática con una CAJA acotada a su máximo
+//     y su mínimo (no ocupa todo el eje Y) y guarda esos extremos.
+//  3) SL según la regla:
+//       · 8:30 ALCISTA  → SL en el MÍNIMO de Asia
+//       · 8:30 BAJISTA  → SL en el MÁXIMO de Asia
+//  Todo se calcula al cerrar la vela de 8:30 (a las 8:35).
 //
-//  IMPORTANTE: pon el gráfico en 5 min y ajusta la ZONA HORARIA
-//  para que "8:30" sea la hora que tú quieres.
+//  IMPORTANTE: gráfico en 5 min y ZONA HORARIA correcta.
+//  La sesión asiática y la vela 8:30 usan la MISMA zona horaria.
 // ─────────────────────────────────────────────────────────────
 
-// ══ ENTRADAS · Configuración ═════════════════════════════════
-gCfg  = "Configuración"
+// ══ ENTRADAS · Vela 8:30 ═════════════════════════════════════
+gCfg  = "Vela de referencia (8:30)"
 tHour = input.int(8,  "Hora de la vela",   minval = 0, maxval = 23, group = gCfg)
 tMin  = input.int(30, "Minuto de la vela", minval = 0, maxval = 59, group = gCfg)
 tz    = input.string("Europe/Madrid", "Zona horaria", options = ["Europe/Madrid", "Europe/London", "America/New_York", "UTC"], group = gCfg)
 pts   = input.float(100, "Puntos para el TP", minval = 0, group = gCfg)
 
+// ══ ENTRADAS · Sesión asiática ═══════════════════════════════
+gAsia      = "Sesión asiática"
+showAsia   = input.bool(true, "Sombrear sesión asiática (caja máx/mín)", group = gAsia)
+asiaH1     = input.int(2, "Asia · hora inicio", minval = 0, maxval = 23, group = gAsia)
+asiaH2     = input.int(8, "Asia · hora fin",    minval = 0, maxval = 23, group = gAsia)
+colAsiaBas = input.color(#4a90e2, "Color fondo Asia", group = gAsia)
+asiaTransp = input.int(90, "Transparencia fondo (0=sólido, 100=invisible)", minval = 0, maxval = 100, group = gAsia)
+asiaBorder = input.int(50, "Transparencia del borde", minval = 0, maxval = 100, group = gAsia)
+
+// ══ ENTRADAS · Marcar la vela 8:30 ═══════════════════════════
+gMark     = "Marcar la vela 8:30"
+markBox   = input.bool(true,  "Recuadro alrededor de la vela", group = gMark)
+markArrow = input.bool(true,  "Flecha señalando la vela",      group = gMark)
+markBar   = input.bool(false, "Colorear la propia vela",       group = gMark)
+colMark   = input.color(#f5a623, "Color del marcador", group = gMark)
+markPad   = input.int(2, "Margen del recuadro (ticks)", minval = 0, group = gMark)
+
 // ══ ENTRADAS · Visual ════════════════════════════════════════
 gView       = "Visual"
-extendH     = input.int(13, "Horas que se extiende la línea", minval = 1, maxval = 48, group = gView)
+extendH     = input.int(13, "Horas que se extienden las líneas", minval = 1, maxval = 48, group = gView)
 showEntry   = input.bool(true,  "Mostrar línea de entrada (cierre 8:30)", group = gView)
 showHistory = input.bool(false, "Mostrar días anteriores (historial)",    group = gView)
 showTable   = input.bool(true,  "Mostrar tabla de resumen",               group = gView)
-colBull     = input.color(#0f9d4f, "Color alcista", group = gView)
-colBear     = input.color(#e0454a, "Color bajista", group = gView)
+tblOffset   = input.int(7, "Separar la tabla del borde derecho (% ancho)", minval = 0, maxval = 40, group = gView)
+colTp       = input.color(#0f9d4f, "Color TP (verde)", group = gView)
+colSl       = input.color(#e0454a, "Color SL (rojo)",  group = gView)
 
-// ══ DETECCIÓN DE LA VELA ═════════════════════════════════════
+// ══ DETECCIÓN DE LA VELA 8:30 ════════════════════════════════
 is5min   = timeframe.period == "5"
 hh       = hour(time, tz)
 mm       = minute(time, tz)
 isTarget = hh == tHour and mm == tMin
 extendMs = extendH * 60 * 60 * 1000
 
-// memoria para la tabla (la dirección se deduce de TP vs cierre)
-var float vClose = na
-var float vTp    = na
+// ══ SESIÓN ASIÁTICA: dentro/fuera + máximo/mínimo ════════════
+hA     = hour(time, tz)
+inAsia = asiaH1 <= asiaH2 ? (hA >= asiaH1 and hA < asiaH2) : (hA >= asiaH1 or hA < asiaH2)
 
-// referencias para poder borrar el día anterior si no hay historial
+colAsia    = color.new(colAsiaBas, asiaTransp)
+colAsiaBrd = color.new(colAsiaBas, asiaBorder)
+
+var float asiaHi    = na   // máximo en curso de la sesión
+var float asiaLo    = na   // mínimo en curso de la sesión
+var float asiaHiDay = na   // máximo CONGELADO de la sesión ya cerrada (para el SL)
+var float asiaLoDay = na   // mínimo CONGELADO de la sesión ya cerrada (para el SL)
+
+var box asiaBox = na       // caja del sombreado, acotada al rango de la sesión
+
+asiaStart = inAsia and not inAsia[1]
+asiaEnd   = not inAsia and inAsia[1]
+
+if asiaStart
+    asiaHi := high
+    asiaLo := low
+else if inAsia
+    asiaHi := math.max(asiaHi, high)
+    asiaLo := math.min(asiaLo, low)
+
+if asiaEnd
+    asiaHiDay := asiaHi
+    asiaLoDay := asiaLo
+
+// La caja nace con la sesión y se va estirando (a lo ancho y a lo alto)
+// mientras Asia sigue abierta; al terminar se queda congelada.
+// Se dibuja en TODAS las sesiones del histórico (no depende de showHistory,
+// que solo afecta a las líneas de entrada/TP/SL).
+if showAsia
+    if asiaStart
+        asiaBox := box.new(time, asiaHi, time_close, asiaLo, xloc = xloc.bar_time, border_color = colAsiaBrd, border_width = 1, bgcolor = colAsia)
+    else if inAsia and not na(asiaBox)
+        box.set_top(asiaBox, asiaHi)
+        box.set_bottom(asiaBox, asiaLo)
+        box.set_right(asiaBox, time_close)
+
+// ══ MARCADOR VISUAL DE LA VELA 8:30 ══════════════════════════
+// Se dibuja en cuanto la vela abre y se ajusta en vivo hasta que cierra.
+isMarkable = isTarget and is5min
+pad        = syminfo.mintick * markPad
+
+var box mkBox = na
+if markBox and isMarkable
+    mkBox := box.new(time, high + pad, time_close, low - pad, xloc = xloc.bar_time, border_color = colMark, border_width = 2, bgcolor = color.new(colMark, 88))
+
+plotshape(markArrow and isMarkable, title = "Vela 8:30", style = shape.triangleup, location = location.belowbar, color = colMark, size = size.tiny)
+barcolor(markBar and isMarkable ? colMark : na, title = "Vela 8:30 coloreada")
+
+// ══ MEMORIA PARA LA TABLA ════════════════════════════════════
+var float  vClose = na
+var float  vTp    = na
+var float  vSl    = na
+var string vDate  = na
+
+// referencias para borrar el día anterior si no hay historial
 var line  lnTp = na
 var line  lnEn = na
+var line  lnSl = na
 var label lbTp = na
 var label lbEn = na
+var label lbSl = na
 
 if isTarget and barstate.isconfirmed and is5min
     isBull = close >= open                       // doji (raro) se cuenta como alcista
     tp     = isBull ? close + pts : close - pts
-    col    = isBull ? colBull : colBear
+    sl     = isBull ? asiaLoDay : asiaHiDay       // SL = extremo opuesto del rango asiático
+    hasSl  = not na(sl)
     x1     = time
     x2     = time + extendMs
 
     if not showHistory
         line.delete(lnTp)
         line.delete(lnEn)
+        line.delete(lnSl)
         label.delete(lbTp)
         label.delete(lbEn)
+        label.delete(lbSl)
 
-    // línea de entrada (cierre de la vela)
+    // entrada (cierre de la vela)
     lnEn := showEntry ? line.new(x1, close, x2, close, xloc = xloc.bar_time, color = color.new(color.gray, 20), style = line.style_dotted, width = 1) : na
     lbEn := showEntry ? label.new(x2, close, "Entrada " + str.tostring(close, format.mintick), xloc = xloc.bar_time, style = label.style_label_left, color = color.new(color.gray, 20), textcolor = color.white, size = size.small) : na
 
-    // línea del TP
-    lnTp := line.new(x1, tp, x2, tp, xloc = xloc.bar_time, color = col, style = line.style_solid, width = 2)
-    lbTp := label.new(x2, tp, "TP " + str.tostring(tp, format.mintick) + (isBull ? "  ▲" : "  ▼"), xloc = xloc.bar_time, style = label.style_label_left, color = col, textcolor = color.white, size = size.normal)
+    // TP (verde)
+    lnTp := line.new(x1, tp, x2, tp, xloc = xloc.bar_time, color = colTp, style = line.style_solid, width = 2)
+    lbTp := label.new(x2, tp, "TP " + str.tostring(tp, format.mintick) + (isBull ? "  ▲" : "  ▼"), xloc = xloc.bar_time, style = label.style_label_left, color = colTp, textcolor = color.white, size = size.normal)
+
+    // SL (rojo) = mínimo de Asia si alcista, máximo de Asia si bajista
+    lnSl := hasSl ? line.new(x1, sl, x2, sl, xloc = xloc.bar_time, color = colSl, style = line.style_dashed, width = 2) : na
+    lbSl := hasSl ? label.new(x2, sl, "SL " + str.tostring(sl, format.mintick), xloc = xloc.bar_time, style = label.style_label_left, color = colSl, textcolor = color.white, size = size.small) : na
 
     // guardar para la tabla
     vClose := close
     vTp    := tp
+    vSl    := sl
+    vDate  := str.format_time(time, "dd/MM/yyyy", tz)
 
-    // aviso (para recibir el número en cuanto cierra la vela)
-    alert("Vela " + str.tostring(tHour) + ":" + str.tostring(tMin) + (isBull ? " ALCISTA ▲" : " BAJISTA ▼") + "  |  Cierre: " + str.tostring(close, format.mintick) + "  |  TP: " + str.tostring(tp, format.mintick), alert.freq_once_per_bar)
+    // aviso al cerrar la vela (8:35), con TP y SL
+    alert("Vela " + str.tostring(tHour) + ":" + str.tostring(tMin) + (isBull ? " ALCISTA ▲" : " BAJISTA ▼") + "  |  Entrada: " + str.tostring(close, format.mintick) + "  |  TP: " + str.tostring(tp, format.mintick) + "  |  SL: " + (hasSl ? str.tostring(sl, format.mintick) : "s/d"), alert.freq_once_per_bar)
 
 // ══ TABLA DE RESUMEN (esquina superior derecha) ══════════════
-var table t = table.new(position.top_right, 2, 4, bgcolor = color.new(#101418, 8), frame_color = color.new(color.gray, 40), frame_width = 1, border_color = color.new(color.gray, 65), border_width = 1)
+// Pine solo permite anclar la tabla a 9 posiciones fijas (sin offset en píxeles),
+// así que para separarla del borde derecho se añade una 3ª columna vacía que
+// hace de margen. Por eso el fondo/marco van por celda y no en la tabla entera:
+// si no, el relleno oscuro se extendería también sobre esa columna invisible.
+colPanel = color.new(#101418, 8)
+colHead  = color.new(#2b4bf2, 15)
+
+var table t = table.new(position.top_right, 3, 6, bgcolor = color.new(color.black, 100), frame_width = 0, border_width = 0)
 
 if showTable and barstate.islast
     hasData   = not na(vTp)
     isBullNow = hasData and vTp >= vClose
     dirTxt    = not hasData ? "—" : (isBullNow ? "ALCISTA ▲" : "BAJISTA ▼")
-    dirCol    = not hasData ? color.gray : (isBullNow ? colBull : colBear)
+    dirCol    = not hasData ? color.gray : (isBullNow ? colTp : colSl)
 
-    table.cell(t, 0, 0, "VELA " + str.tostring(tHour) + ":" + (tMin < 10 ? "0" : "") + str.tostring(tMin), text_color = color.white, text_size = size.small, bgcolor = color.new(#2b4bf2, 15))
-    table.cell(t, 1, 0, "→ 5 min", text_color = color.white, text_size = size.small, bgcolor = color.new(#2b4bf2, 15))
+    table.cell(t, 0, 0, "VELA " + str.tostring(tHour) + ":" + (tMin < 10 ? "0" : "") + str.tostring(tMin), text_color = color.white, text_size = size.small, bgcolor = colHead)
+    table.cell(t, 1, 0, "→ 5 min", text_color = color.white, text_size = size.small, bgcolor = colHead)
 
-    table.cell(t, 0, 1, "Dirección", text_color = color.silver, text_size = size.small, text_halign = text.align_left)
-    table.cell(t, 1, 1, dirTxt, text_color = dirCol, text_size = size.small)
+    table.cell(t, 0, 1, "Fecha", text_color = color.silver, text_size = size.small, text_halign = text.align_left, bgcolor = colPanel)
+    table.cell(t, 1, 1, na(vDate) ? "—" : vDate, text_color = color.white, text_size = size.small, bgcolor = colPanel)
 
-    table.cell(t, 0, 2, "Cierre (entrada)", text_color = color.silver, text_size = size.small, text_halign = text.align_left)
-    table.cell(t, 1, 2, na(vClose) ? "—" : str.tostring(vClose, format.mintick), text_color = color.white, text_size = size.small)
+    table.cell(t, 0, 2, "Dirección", text_color = color.silver, text_size = size.small, text_halign = text.align_left, bgcolor = colPanel)
+    table.cell(t, 1, 2, dirTxt, text_color = dirCol, text_size = size.small, bgcolor = colPanel)
 
-    table.cell(t, 0, 3, "TP objetivo", text_color = color.silver, text_size = size.small, text_halign = text.align_left)
-    table.cell(t, 1, 3, na(vTp) ? "—" : str.tostring(vTp, format.mintick), text_color = dirCol, text_size = size.small)
+    table.cell(t, 0, 3, "Entrada (cierre)", text_color = color.silver, text_size = size.small, text_halign = text.align_left, bgcolor = colPanel)
+    table.cell(t, 1, 3, na(vClose) ? "—" : str.tostring(vClose, format.mintick), text_color = color.white, text_size = size.small, bgcolor = colPanel)
+
+    table.cell(t, 0, 4, "TP objetivo", text_color = color.silver, text_size = size.small, text_halign = text.align_left, bgcolor = colPanel)
+    table.cell(t, 1, 4, na(vTp) ? "—" : str.tostring(vTp, format.mintick), text_color = colTp, text_size = size.small, bgcolor = colPanel)
+
+    table.cell(t, 0, 5, "SL (rango Asia)", text_color = color.silver, text_size = size.small, text_halign = text.align_left, bgcolor = colPanel)
+    table.cell(t, 1, 5, na(vSl) ? "—" : str.tostring(vSl, format.mintick), text_color = colSl, text_size = size.small, bgcolor = colPanel)
+
+    // columna de margen: vacía y transparente, solo empuja la tabla a la izquierda
+    for r = 0 to 5
+        table.cell(t, 2, r, "", width = tblOffset, bgcolor = color.new(color.black, 100))
 
 // ══ AVISO SI EL GRÁFICO NO ESTÁ EN 5 MIN ═════════════════════
 var label warnLbl = na
