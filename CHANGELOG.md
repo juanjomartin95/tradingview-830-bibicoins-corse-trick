@@ -9,6 +9,10 @@ Tipos de cambio que usamos: **Añadido**, **Cambiado**, **Corregido**, **Elimina
 
 ## [Sin publicar]
 
+### Cambiado
+
+- README actualizado a la versión 1.1.0: explica la sesión asiática, el SL y los marcadores, y documenta todos los ajustes agrupados igual que en el panel del indicador.
+
 ## [1.1.0] - 2026-08-11
 
 ### Añadido
